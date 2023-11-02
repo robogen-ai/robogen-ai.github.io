@@ -1,0 +1,34 @@
+========== Generated task name and description ==========
+Rotate in place
+The quadraped spins itself around the vertical axis
+
+========== Reward ==========
+def _compute_reward(self):
+    COM_pos, COM_quat = get_robot_pose(self)
+    COM_vel, COM_ang = get_robot_velocity(self) 
+    face_dir, side_dir, up_dir = get_robot_direction(self, COM_quat)
+
+    target_v = np.array([0, 0, 0]) 
+    target_up = np.array([0, 0, 1]) 
+    target_face = face_dir 
+    target_side = side_dir 
+    target_height = self.COM_init_pos[2] 
+    target_ang = np.array([0, 0, 0.5]) 
+
+    alpha_vel = 3.0
+    alpha_up = 1.0
+    alpha_face = 1.0
+    alpha_side = 1.0
+    alpha_height = 1.0
+    alpha_ang = 3.0
+
+    r_vel    = - alpha_vel * np.linalg.norm(COM_vel - target_v)
+    r_up     = - alpha_up * np.linalg.norm(up_dir - target_up)
+    r_face   = - alpha_face * np.linalg.norm(face_dir - target_face)
+    r_side   = - alpha_side * np.linalg.norm(side_dir - target_side)
+    r_height = - alpha_height * np.linalg.norm(COM_pos[2] - target_height)
+    r_ang    = - alpha_ang * np.linalg.norm(COM_ang - target_ang)
+    r = r_vel + r_up + r_face + r_side + r_height + r_ang
+
+    r_energy = get_energy_reward(self)
+    return r + r_energy

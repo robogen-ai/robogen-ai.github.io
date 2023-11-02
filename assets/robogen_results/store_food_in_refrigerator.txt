@@ -1,0 +1,150 @@
+========== Generated task name and description ==========
+store food in refrigerator
+The robot arm opens the refrigerator, places food inside it, and then closes the refrigerator again
+
+========== Scene configuration ==========
+- use_table: true
+- center: (1.0, 0.2, 0)
+  lang: a common two-door refrigerator
+  name: Refrigerator
+  on_table: false
+  path: refrigerator.urdf
+  size: 1.8
+  type: urdf
+- center: (0.5, 0.5, 0)
+  lang: an apple
+  name: Food
+  on_table: true
+  path: apple.obj
+  size: 0.08
+  type: mesh
+- set_joint_angle_object_name: Refrigerator
+- spatial_relationships: []
+- center: (0.2, 0.2, 0)
+  lang: a wooden cutting board
+  name: cutting_board
+  on_table: true
+  path: cutting_board.obj
+  size: 0.4
+  type: mesh
+- center: (0.2, 0.4, 0)
+  lang: a common kitchen knife
+  name: Knife
+  on_table: true
+  path: knife.obj
+  size: 0.2
+  type: urdf
+- center: (0.8, 0.8, 0)
+  lang: a common kitchen pot
+  name: pot
+  on_table: true
+  path: pot.obj
+  size: 0.3
+  type: mesh
+
+========== Task decompositions (substep: learning algorithm type, action space) ==========
+grasp the refrigerator door: primitive, none
+open the refrigerator door: reward, delta_translation
+grasp the food: primitive, none
+move the food into the refrigerator: reward, target_location
+grasp the refrigerator door again: primitive, none
+close the refrigerator door: reward, delta_translation
+
+========== Reward and primitives ==========
+- grasp_the_refrigerator_door
+    def execute(self):
+        rgbs, final_state = grasp_object_link(self, "Refrigerator", "link_0")  
+        grasped_object, grasped_link = get_grasped_object_and_link_name(self)
+        success = (grasped_object == "Refrigerator".lower() and grasped_link == "link_0".lower())
+
+        return rgbs, final_state, success
+
+- open_the_refrigerator_door
+    def _compute_reward(self):
+        # this reward encourages the end-effector to stay near door to grasp it.
+        eef_pos = get_eef_pos(self)[0]
+        door_pos = get_link_state(self, "Refrigerator", "link_0")
+        reward_near = -np.linalg.norm(eef_pos - door_pos)
+        
+        # Get the joint state of the door. We know from the semantics and the articulation tree that joint_0 connects link_0 and is the joint that controls the rotation of the door.
+        joint_angle = get_joint_state(self, "Refrigerator", "joint_0") 
+        # The reward is the negative distance between the current joint angle and the joint angle when the door is fully open (upper limit).
+        joint_limit_low, joint_limit_high = get_joint_limit(self, "Refrigerator", "joint_0")
+        target_joint_angle = joint_limit_high
+        diff = np.abs(joint_angle - target_joint_angle)
+        reward_joint =  -diff
+        
+        reward = reward_near + 5 * reward_joint
+        
+        success = diff < 0.1 * (joint_limit_high - joint_limit_low)
+        
+        return reward, success
+
+- grasp_the_food
+    def execute(self):
+        rgbs, final_state = grasp_object(self, "Food")
+        success = get_grasped_object_name(self) == "Food".lower()
+
+        return rgbs, final_state, success
+
+- move_the_food_into_the_refrigerator
+    def _compute_reward(self):
+        # Get the current food position
+        food_position = get_position(self, "Food")
+        
+        # The first reward encourages the end-effector to stay near the food
+        eef_pos = get_eef_pos(self)[0]
+        reward_near = -np.linalg.norm(eef_pos - food_position)
+        
+        # Get the refrigerator body bounding box
+        min_aabb, max_aabb = get_bounding_box_link(self, "Refrigerator", "link_2") # from the semantics, link_2 is the body of the refrigerator.
+        diff = np.array(max_aabb) - np.array(min_aabb)
+        min_aabb = np.array(min_aabb) + 0.05 * diff  # shrink the bounding box a bit
+        max_aabb = np.array(max_aabb) - 0.05 * diff
+        
+        # The reward is to encourage the robot to grasp the food and move the food to be inside the refrigerator. 
+        reward_in = 0
+        if in_bbox(self, food_position, min_aabb, max_aabb): reward_in += 1
+        
+        # another reward is to encourage the robot to move the food to be near the refrigerator
+        # we need this to give a dense reward signal for the robot to learn to perform this task. 
+        center = (np.array(max_aabb) + np.array(min_aabb)) / 2
+        reward_reaching = -np.linalg.norm(center - food_position)
+        
+        # The task is considered to be successful if the food is inside the refrigerator bounding box
+        success = in_bbox(self, food_position, min_aabb, max_aabb)
+        
+        # We give more weight to reward_in, which is the major goal of the task.
+        reward = 5 * reward_in + reward_reaching + reward_near
+        return reward, success
+
+- grasp_the_refrigerator_door_again
+    def execute(self):
+        rgbs, final_state = grasp_object_link(self, "Refrigerator", "link_0")
+        grasped_object, grasped_link = get_grasped_object_and_link_name(self)
+        success = (grasped_object == "Refrigerator".lower() and grasped_link == "link_0".lower())  
+
+        return rgbs, final_state, success
+
+- close_the_refrigerator_door
+    def _compute_reward(self):
+        # this reward encourages the end-effector to stay near door
+        eef_pos = get_eef_pos(self)[0]
+        door_pos = get_link_state(self, "Refrigerator", "link_0")
+        reward_near = -np.linalg.norm(eef_pos - door_pos)
+        
+        # Get the joint state of the door. The semantics and the articulation tree show that joint_0 connects link_0 and is the joint that controls the rotation of the door.
+        joint_angle = get_joint_state(self, "Refrigerator", "joint_0") 
+        # The reward encourages the robot to make joint angle of the door to be the lower limit to close it.
+        joint_limit_low, joint_limit_high = get_joint_limit(self, "Refrigerator", "joint_0")
+        target_joint_angle = joint_limit_low
+        
+        diff = np.abs(target_joint_angle - joint_angle)
+        reward_joint =  -diff
+        
+        reward = reward_near + 5 * reward_joint
+        
+        success = diff < 0.1 * (joint_limit_high - joint_limit_low)       
+        
+        return reward, success
+

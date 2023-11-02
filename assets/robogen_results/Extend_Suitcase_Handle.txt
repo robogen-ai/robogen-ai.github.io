@@ -1,0 +1,70 @@
+========== Generated task name and description ==========
+Extend Suitcase Handle
+The robotic arm will extend the suitcases handle in order to pull or push the suitcase
+
+========== Scene configuration ==========
+- use_table: false
+- center: (1.2, 1.2, 0)
+  lang: a common suitcase with wheels and extendable handle
+  name: Suitcase
+  on_table: false
+  path: suitcase.urdf
+  size: 0.7
+  type: urdf
+- joint_0: '0'
+  set_joint_angle_object_name: Suitcase
+- spatial_relationships: []
+- center: (1.5, 0.8, 0)
+  lang: a common travel backpack
+  name: Backpack
+  on_table: false
+  path: backpack.obj
+  size: 0.5
+  type: mesh
+- center: (0.8, 1.4, 0)
+  lang: a common travel pillow
+  name: Travel Pillow
+  on_table: false
+  path: travel_pillow.obj
+  size: 0.3
+  type: mesh
+- center: (1.7, 1.7, 0)
+  lang: a common luggage cart
+  name: Luggage Cart
+  on_table: false
+  path: luggage_cart.obj
+  size: 1.2
+  type: mesh
+
+========== Task decompositions (substep: learning algorithm type, action space) ==========
+grasp the suitcase handle: primitive, none
+extend the suitcase handle: reward, delta_translation
+
+========== Reward and primitives ==========
+- grasp_the_suitcase_handle
+    def execute(self):
+        rgbs, final_state = grasp_object_link(self, "Suitcase", "link_0")  
+        success = check_grasped(self, "Suitcase", "link_0")
+
+        return rgbs, final_state, success
+
+- extend_the_suitcase_handle
+    def _compute_reward(self):
+        # This reward encourages the end-effector to stay near the handle to grasp it.
+        eef_pos = get_eef_pos(self)[0]
+        handle_pos = get_link_state(self, "Suitcase", "link_0")
+        reward_near = -np.linalg.norm(eef_pos - handle_pos)
+        
+        # Get the joint state of the handle. The semantics and the articulation tree show that joint_0 connects link_0 and is the joint that controls the translation of the handle.
+        joint_value = get_joint_state(self, "Suitcase", "joint_0") 
+        # The reward is the negative distance between the current joint value and the joint value when the handle is fully extended (upper limit).
+        joint_limit_low, joint_limit_high = get_joint_limit(self, "Suitcase", "joint_0")
+        diff = np.abs(joint_value - joint_limit_high)
+        reward_joint =  -diff
+        
+        reward = reward_near + 5 * reward_joint
+        
+        success = diff < 0.1 * (joint_limit_high - joint_limit_low)
+        
+        return reward, success
+

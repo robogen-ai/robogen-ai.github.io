@@ -1,0 +1,158 @@
+========== Generated task name and description ==========
+store an item into the storagefurniture
+The robot arm picks up an item and places it inside the storage furniture, then closes the door of the storage furniture
+
+========== Scene configuration ==========
+- use_table: true
+- center: (1.5, 0.5, 0)
+  lang: a common storage furniture
+  name: StorageFurniture
+  on_table: false
+  path: storage_furniture.urdf
+  size: 1.2
+  type: urdf
+- center: (0.4, 0.6, 0)
+  lang: a small toy
+  name: Item
+  on_table: true
+  path: toy.obj
+  size: 0.2
+  type: mesh
+- set_joint_angle_object_name: StorageFurniture
+- spatial_relationships: []
+- center: (2.0, 0.1, 0)
+  lang: a common wooden chair
+  name: Chair
+  on_table: false
+  path: chair.obj
+  size: 1.0
+  type: urdf
+- center: (0.7, 0.3, 0)
+  lang: a hardcover book
+  name: Book
+  on_table: true
+  path: book.obj
+  size: 0.3
+  type: mesh
+- center: (0.2, 0.2, 0)
+  lang: a table lamp
+  name: Lamp
+  on_table: true
+  path: lamp.obj
+  size: 0.3
+  type: urdf
+- center: (0, 1.2, 0)
+  lang: a small decorative rug
+  name: Rug
+  on_table: false
+  path: rug.obj
+  size: 1.5
+  type: mesh
+
+========== Task decompositions (substep: learning algorithm type, action space) ==========
+grasp the door of the storage furniture: primitive, none
+open the door of the storage furniture: reward, delta_translation
+grasp the item: primitive, none
+put the item into the storage furniture: reward, target_location
+grasp the door of the storage furniture again: primitive, none
+close the door of the storage furniture: reward, delta_translation
+
+========== Reward and primitives ==========
+- grasp_the_door_of_the_storage_furniture
+    def execute(self):
+        rgbs, final_state = grasp_object_link(self, "StorageFurniture", "link_0")  
+        grasped_object, grasped_link = get_grasped_object_and_link_name(self)
+        success = (grasped_object == "StorageFurniture".lower() and grasped_link == "link_0".lower())
+
+        return rgbs, final_state, success
+
+- open_the_door_of_the_storage_furniture
+    def _compute_reward(self):
+        # This reward encourages the end-effector to stay near the door to grasp it.
+        eef_pos = get_eef_pos(self)[0]
+        door_pos = get_link_state(self, "StorageFurniture", "link_0")
+        reward_near = -np.linalg.norm(eef_pos - door_pos)
+        
+        # Get the joint state of the door. The semantics and the articulation tree show that joint_0 connects link_0 and is the joint that controls the rotation of the door.
+        joint_angle = get_joint_state(self, "StorageFurniture", "joint_0") 
+        # The reward is the negative distance between the current joint angle and the joint angle when the door is fully open (upper limit).
+        joint_limit_low, joint_limit_high = get_joint_limit(self, "StorageFurniture", "joint_0")
+        target_joint_angle = joint_limit_high
+        
+        diff = np.abs(joint_angle - target_joint_angle)
+        reward_joint =  -diff
+        
+        reward = reward_near + 5 * reward_joint
+        
+        success = diff < 0.1 * (joint_limit_high - joint_limit_low)
+        
+        return reward, success
+
+- grasp_the_item
+    def execute(self):
+        rgbs, final_state = grasp_object(self, "Item")
+        success = get_grasped_object_name(self) == "Item".lower()
+
+        return rgbs, final_state, success
+
+- put_the_item_into_the_storage_furniture
+    def _compute_reward(self):
+        # Get the current item position
+        item_position = get_position(self, "Item")
+        
+        # This reward encourages the end-effector to stay near the item to grasp it.
+        eef_pos = get_eef_pos(self)[0]
+        reward_near = -np.linalg.norm(eef_pos - item_position)
+        
+        # Get the storage furniture bounding box
+        min_aabb, max_aabb = get_bounding_box_link(self, "StorageFurniture", "link_1") # from the semantics, link_1 is the body of the storage furniture.
+        diff = np.array(max_aabb) - np.array(min_aabb)
+        min_aabb = np.array(min_aabb) + 0.05 * diff  # shrink the bounding box a bit
+        max_aabb = np.array(max_aabb) - 0.05 * diff
+        center = (np.array(max_aabb) + np.array(min_aabb)) / 2
+        
+        # another reward is one if the item is inside the storage furniture bounding box
+        reward_in = 0
+        if in_bbox(self, item_position, min_aabb, max_aabb): reward_in += 1
+        
+        # another reward is to encourage the robot to move the item to be near the storage furniture
+        # we need this to give a dense reward signal for the robot to learn to perform this task. 
+        reward_reaching = -np.linalg.norm(center - item_position)
+        
+        # The task is considered to be successful if the item is inside the storage furniture bounding box
+        success = in_bbox(self, item_position, min_aabb, max_aabb)
+        
+        # We give more weight to reward_in, which is the major goal of the task.
+        reward = 5 * reward_in + reward_reaching + reward_near
+        return reward, success
+
+- grasp_the_door_of_the_storage_furniture_again
+    def execute(self):
+        rgbs, final_state = grasp_object_link(self, "StorageFurniture", "link_0")
+        grasped_object, grasped_link = get_grasped_object_and_link_name(self)
+        success = (grasped_object == "StorageFurniture".lower() and grasped_link == "link_0".lower())  
+
+        return rgbs, final_state, success
+
+- close_the_door_of_the_storage_furniture
+    def _compute_reward(self):
+        # This reward encourages the end-effector to stay near the door
+        eef_pos = get_eef_pos(self)[0]
+        door_pos = get_link_state(self, "StorageFurniture", "link_0")
+        reward_near = -np.linalg.norm(eef_pos - door_pos)
+        
+        # Get the joint state of the door. The semantics and the articulation tree show that joint_0 connects link_0 and is the joint that controls the rotation of the door.
+        joint_angle = get_joint_state(self, "StorageFurniture", "joint_0") 
+        # The reward encourages the robot to make joint angle of the door to be the lower limit to close it.
+        joint_limit_low, joint_limit_high = get_joint_limit(self, "StorageFurniture", "joint_0")
+        target_joint_angle = joint_limit_low
+        
+        diff = np.abs(target_joint_angle - joint_angle)
+        reward_joint =  -diff
+        
+        reward = reward_near + 5 * reward_joint
+        
+        success = diff < 0.1 * (joint_limit_high - joint_limit_low)       
+        
+        return reward, success
+

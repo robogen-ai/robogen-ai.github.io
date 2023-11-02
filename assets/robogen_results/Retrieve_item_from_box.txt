@@ -1,0 +1,160 @@
+========== Generated task name and description ==========
+Retrieve item from box
+The robot arm opens the box, retrieves an item from inside it, and then closes the box again
+
+========== Scene configuration ==========
+- use_table: true
+- center: (0.5, 0.5, 0)
+  lang: a common box
+  name: Box
+  on_table: true
+  path: box.urdf
+  size: 0.45
+  type: urdf
+- center: (0.5, 0.5, 0.15)
+  lang: a small toy car
+  name: Item
+  on_table: true
+  path: toy_car.obj
+  size: 0.1
+  type: mesh
+- set_joint_angle_object_name: Box
+- spatial_relationships:
+  - in, item, box, link_1
+- center: (0.2, 0.8, 0)
+  lang: a common hardcover book
+  name: Book
+  on_table: true
+  path: book.obj
+  size: 0.2
+  type: mesh
+- center: (0.8, 0.2, 0)
+  lang: a common coffee mug
+  name: Coffee Mug
+  on_table: true
+  path: coffee_mug.obj
+  size: 0.1
+  type: mesh
+- center: (0.8, 0.8, 0)
+  lang: a common laptop
+  name: Laptop
+  on_table: true
+  path: laptop.obj
+  size: 0.7
+  type: urdf
+- center: (1.5, 0.5, 0)
+  lang: a common desk lamp
+  name: Desk Lamp
+  on_table: true
+  path: desk_lamp.obj
+  size: 0.3
+  type: mesh
+
+========== Task decompositions (substep: learning algorithm type, action space) ==========
+grasp the box lid: primitive, none
+open the box lid: reward, delta_translation
+grasp the item: primitive, none
+move the item out of the box: reward, target_location
+grasp the box lid again: primitive, none
+close the box lid: reward, delta_translation
+
+========== Reward and primitives ==========
+- grasp_the_box_lid
+    def execute(self):
+        rgbs, final_state = grasp_object_link(self, "Box", "link_0")  
+        grasped_object, grasped_link = get_grasped_object_and_link_name(self)
+        success = (grasped_object == "Box".lower() and grasped_link == "link_0".lower())
+
+        return rgbs, final_state, success
+
+- open_the_box_lid
+    def _compute_reward(self):
+        # This reward encourages the end-effector to stay near the lid to grasp it.
+        eef_pos = get_eef_pos(self)[0]
+        lid_pos = get_link_state(self, "Box", "link_0")
+        reward_near = -np.linalg.norm(eef_pos - lid_pos)
+        
+        # Get the joint state of the lid. The semantics and the articulation tree show that joint_0 connects link_0 and is the joint that controls the rotation of the lid.
+        joint_angle = get_joint_state(self, "Box", "joint_0") 
+        # The reward is the negative distance between the current joint angle and the joint angle when the lid is fully open (upper limit).
+        joint_limit_low, joint_limit_high = get_joint_limit(self, "Box", "joint_0")
+        target_joint_angle = joint_limit_high
+        
+        diff = np.abs(joint_angle - target_joint_angle)
+        reward_joint =  -diff
+        
+        reward = reward_near + 5 * reward_joint
+        
+        success = diff < 0.1 * (joint_limit_high - joint_limit_low)
+        
+        return reward, success
+
+- grasp_the_item
+    def execute(self):
+        rgbs, final_state = grasp_object(self, "Item")
+        success = get_grasped_object_name(self) == "Item".lower()
+
+        return rgbs, final_state, success
+
+- move_the_item_out_of_the_box
+    def _compute_reward(self):
+        # Get the current item position
+        item_position = get_position(self, "Item")
+        
+        # This reward encourages the end-effector to stay near the item
+        eef_pos = get_eef_pos(self)[0]
+        reward_near = -np.linalg.norm(eef_pos - item_position)
+        
+        # The reward is to encourage the robot to grasp the item and move the item to be on the table. 
+        table_bbox_low, table_bbox_high = get_bounding_box(self, "init_table") # the table is referred to as "init_table" in the simulator. 
+        table_bbox_range = table_bbox_high - table_bbox_low
+        
+        # target location is to put the item at a random location on the table
+        target_location = np.zeros(3)
+        target_location[0] = table_bbox_low[0] + 0.2 * table_bbox_range[0] # 0.2 is a random chosen number, any number in [0, 1] should work
+        target_location[1] = table_bbox_low[1] + 0.3 * table_bbox_range[1] # 0.3 is a random chosen number, any number in [0, 1] should work
+        target_location[2] = table_bbox_high[2] # the height should be the table height
+        diff = np.linalg.norm(item_position - target_location)
+        reward_distance = -diff
+
+        min_aabb, max_aabb = get_bounding_box_link(self, "Box", "link_1") # from the semantics, link_1 is the body of the box.
+        reward_out = 0
+        if not in_bbox(self, item_position, min_aabb, max_aabb):
+            reward_out = 1
+        
+        reward = reward_near + reward_distance + 2 * reward_out
+        
+        success = diff < 0.06
+        
+        return reward, success
+
+- grasp_the_box_lid_again
+    def execute(self):
+        rgbs, final_state = grasp_object_link(self, "Box", "link_0")
+        grasped_object, grasped_link = get_grasped_object_and_link_name(self)
+        success = (grasped_object == "Box".lower() and grasped_link == "link_0".lower())  
+
+        return rgbs, final_state, success
+
+- close_the_box_lid
+    def _compute_reward(self):
+        # This reward encourages the end-effector to stay near the lid
+        eef_pos = get_eef_pos(self)[0]
+        lid_pos = get_link_state(self, "Box", "link_0")
+        reward_near = -np.linalg.norm(eef_pos - lid_pos)
+        
+        # Get the joint state of the lid. The semantics and the articulation tree show that joint_0 connects link_0 and is the joint that controls the rotation of the lid.
+        joint_angle = get_joint_state(self, "Box", "joint_0") 
+        # The reward encourages the robot to make joint angle of the lid to be the lower limit to close it.
+        joint_limit_low, joint_limit_high = get_joint_limit(self, "Box", "joint_0")
+        target_joint_angle = joint_limit_low
+        
+        diff = np.abs(target_joint_angle - joint_angle)
+        reward_joint =  -diff
+        
+        reward = reward_near + 5 * reward_joint
+        
+        success = diff < 0.1 * (joint_limit_high - joint_limit_low)       
+        
+        return reward, success
+

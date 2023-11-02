@@ -1,0 +1,143 @@
+========== Generated task name and description ==========
+load dish into dishwasher
+The robot arm picks up a dish and places it inside the dishwasher, then closes the dishwasher door
+
+========== Scene configuration ==========
+- use_table: true
+- center: (1.0, 0.2, 0)
+  lang: a common dishwasher
+  name: Dishwasher
+  on_table: false
+  path: dishwasher.urdf
+  size: 0.85
+  type: urdf
+- center: (0.5, 0.5, 0)
+  lang: a common dish
+  name: Dish
+  on_table: true
+  path: dish.obj
+  size: 0.28
+  type: mesh
+- joint_1: '0'
+  set_joint_angle_object_name: Dishwasher
+- spatial_relationships: []
+- center: (0.2, 0.2, 0)
+  lang: a common kitchen cup
+  name: cup
+  on_table: true
+  path: cup.obj
+  size: 0.1
+  type: mesh
+- center: (0.8, 0.8, 0)
+  lang: a common kitchen fork
+  name: fork
+  on_table: true
+  path: fork.obj
+  size: 0.05
+  type: mesh
+
+========== Task decompositions (substep: learning algorithm type, action space) ==========
+grasp the dishwasher door: primitive, none
+open the dishwasher door: reward, delta_translation
+grasp the dish: primitive, none
+move the dish into the dishwasher: reward, target_location
+grasp the dishwasher door again: primitive, none
+close the dishwasher door: reward, delta_translation
+
+========== Reward and primitives ==========
+- grasp_the_dishwasher_door
+    def execute(self):
+        rgbs, final_state = grasp_object_link(self, "Dishwasher", "link_1")  
+        grasped_object, grasped_link = get_grasped_object_and_link_name(self)
+        success = (grasped_object == "Dishwasher".lower() and grasped_link == "link_1".lower())
+
+        return rgbs, final_state, success
+
+- open_the_dishwasher_door
+    def _compute_reward(self):
+        # This reward encourages the end-effector to stay near the door to grasp it.
+        eef_pos = get_eef_pos(self)[0]
+        door_pos = get_link_state(self, "Dishwasher", "link_1")
+        reward_near = -np.linalg.norm(eef_pos - door_pos)
+        
+        # Get the joint state of the door. We know from the semantics and the articulation tree that joint_1 connects link_1 and is the joint that controls the rotation of the door.
+        joint_angle = get_joint_state(self, "Dishwasher", "joint_1") 
+        # The reward is the negative distance between the current joint angle and the joint angle when the door is fully open (upper limit).
+        joint_limit_low, joint_limit_high = get_joint_limit(self, "Dishwasher", "joint_1")
+        target_joint_angle = joint_limit_high
+        diff = np.abs(joint_angle - target_joint_angle)
+        reward_joint =  -diff
+        
+        reward = reward_near + 5 * reward_joint
+        
+        success = diff < 0.1 * (joint_limit_high - joint_limit_low)
+        
+        return reward, success
+
+- grasp_the_dish
+    def execute(self):
+        rgbs, final_state = grasp_object(self, "Dish")
+        success = get_grasped_object_name(self) == "Dish".lower()
+
+        return rgbs, final_state, success
+
+- move_the_dish_into_the_dishwasher
+    def _compute_reward(self):
+        # Get the current dish position
+        dish_position = get_position(self, "Dish")
+        
+        # This reward encourages the end-effector to stay near the dish to grasp it.
+        eef_pos = get_eef_pos(self)[0]
+        reward_near = -np.linalg.norm(eef_pos - dish_position)
+        
+        # Get the dishwasher body bounding box
+        min_aabb, max_aabb = get_bounding_box_link(self, "Dishwasher", "link_0") # from the semantics, link_0 is the body of the dishwasher.
+        diff = np.array(max_aabb) - np.array(min_aabb)
+        min_aabb = np.array(min_aabb) + 0.05 * diff  # shrink the bounding box a bit
+        max_aabb = np.array(max_aabb) - 0.05 * diff
+        
+        # another reward is one if the dish is inside the dishwasher bounding box
+        reward_in = 0
+        if in_bbox(self, dish_position, min_aabb, max_aabb): reward_in += 1
+        
+        # another reward is to encourage the robot to move the dish to be near the dishwasher
+        # we need this to give a dense reward signal for the robot to learn to perform this task. 
+        reward_reaching = -np.linalg.norm(dish_position - np.array(min_aabb))
+        
+        # The task is considered to be successful if the dish is inside the dishwasher bounding box
+        success = in_bbox(self, dish_position, min_aabb, max_aabb)
+        
+        # We give more weight to reward_in, which is the major goal of the task.
+        reward = 5 * reward_in + reward_reaching + reward_near
+        return reward, success
+
+- grasp_the_dishwasher_door_again
+    def execute(self):
+        rgbs, final_state = grasp_object_link(self, "Dishwasher", "link_1")
+        grasped_object, grasped_link = get_grasped_object_and_link_name(self)
+        success = (grasped_object == "Dishwasher".lower() and grasped_link == "link_1".lower())  
+
+        return rgbs, final_state, success
+
+- close_the_dishwasher_door
+    def _compute_reward(self):
+        # This reward encourages the end-effector to stay near the door
+        eef_pos = get_eef_pos(self)[0]
+        door_pos = get_link_state(self, "Dishwasher", "link_1")
+        reward_near = -np.linalg.norm(eef_pos - door_pos)
+        
+        # Get the joint state of the door. The semantics and the articulation tree show that joint_1 connects link_1 and is the joint that controls the rotation of the door.
+        joint_angle = get_joint_state(self, "Dishwasher", "joint_1") 
+        # The reward encourages the robot to make joint angle of the door to be the lower limit to close it.
+        joint_limit_low, joint_limit_high = get_joint_limit(self, "Dishwasher", "joint_1")
+        target_joint_angle = joint_limit_low
+        
+        diff = np.abs(target_joint_angle - joint_angle)
+        reward_joint =  -diff
+        
+        reward = reward_near + 5 * reward_joint
+        
+        success = diff < 0.1 * (joint_limit_high - joint_limit_low)       
+        
+        return reward, success
+

@@ -1,0 +1,78 @@
+========== Generated task name and description ==========
+Unload Objects from Cart
+The robot arm will pick up an object from the cart and move it to a different location
+
+========== Scene configuration ==========
+- use_table: false
+- center: (1.5, 1.5, 0)
+  lang: a common cart
+  name: Cart
+  on_table: false
+  path: cart.urdf
+  size: 0.7
+  type: urdf
+- center: (1.5, 1.5, 0.35)
+  lang: a milk carton
+  name: Milk
+  on_table: false
+  path: milk.obj
+  size: 0.15
+  type: mesh
+- set_joint_angle_object_name: Cart
+- spatial_relationships:
+  - in, milk, cart, link_4
+- center: (2.5, 1.5, 0)
+  lang: a standard wooden pallet
+  name: Pallet
+  on_table: false
+  path: pallet.obj
+  size: 1.2
+  type: mesh
+- center: (1, 2, 0)
+  lang: a standard metal barrel
+  name: Barrel
+  on_table: false
+  path: barrel.obj
+  size: 0.9
+  type: mesh
+- center: (2, 2, 0)
+  lang: a standard forklift
+  name: Forklift
+  on_table: false
+  path: forklift.obj
+  size: 1.5
+  type: mesh
+
+========== Task decompositions (substep: learning algorithm type, action space) ==========
+grasp the milk: primitive, none
+move the milk to a different location: reward, target_location
+
+========== Reward and primitives ==========
+- grasp_the_milk
+    def execute(self):
+        rgbs, final_state = grasp_object(self, "Milk")
+        success = check_grasped(self, "Milk")
+
+        return rgbs, final_state, success
+
+- move_the_milk_to_a_different_location
+    def _compute_reward(self):
+        # Get the current Milk position
+        milk_position = get_position(self, "Milk")
+        
+        # This reward encourages the end-effector to stay near the box to grasp it.
+        eef_pos = get_eef_pos(self)[0]
+        reward_near = -np.linalg.norm(eef_pos - milk_position)
+        
+        # The reward is to encourage the robot to move the box to a different location.
+        # The target location is arbitrarily chosen to be at (0.6, 0.6, 0.35) in the world coordinate.
+        target_location = np.array([0.6, 0.6, 0.35])
+        diff = np.linalg.norm(milk_position - target_location)
+        reward_distance = -diff
+        
+        # The task is considered to be successful if the box is close enough to the target location.
+        success = diff < 0.1
+        
+        reward = reward_near + 5 * reward_distance
+        return reward, success
+

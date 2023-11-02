@@ -195,3 +195,8 @@ body {
 .dropdown-item {
     white-space: pre-wrap;
 }  
+
+.scrollable {
+    max-height: 800px; /* You can adjust this value as per your design */
+    overflow-y: auto;
+}

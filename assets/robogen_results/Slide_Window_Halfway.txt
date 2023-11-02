@@ -1,0 +1,71 @@
+========== Generated task name and description ==========
+Open Window Halfway
+The robotic arm will open one of the slider translation windows halfway to let fresh air in
+
+========== Scene configuration ==========
+- use_table: false
+- center: (1.5, 1.5, 0)
+  lang: a common slider translation window
+  name: Window
+  on_table: false
+  path: window.urdf
+  size: 1.2
+  type: urdf
+- set_joint_angle_object_name: Window
+- spatial_relationships: []
+- center: (2, 1.5, 0)
+  lang: a common indoor plant
+  name: Plant
+  on_table: false
+  path: plant.obj
+  size: 0.3
+  type: mesh
+- center: (1, 2, 0)
+  lang: a common office desk
+  name: Desk
+  on_table: false
+  path: desk.obj
+  size: 0.8
+  type: mesh
+- center: (0.7, 2, 0)
+  lang: a common office chair
+  name: Chair
+  on_table: false
+  path: chair.obj
+  size: 0.6
+  type: urdf
+
+========== Task decompositions (substep: learning algorithm type, action space) ==========
+approach the window: primitive, none
+open the window halfway: reward, delta_translation
+
+========== Reward and primitives ==========
+- approach_the_window
+    def execute(self):
+        rgbs, final_state = approach_object_link(self, "Window", "link_0")  
+        success = gripper_close_to_object_link(self, "Window", "link_0")
+
+        return rgbs, final_state, success
+
+- open_the_window_halfway
+    def _compute_reward(self):
+        # This reward encourages the end-effector to stay near the window to open it.
+        eef_pos = get_eef_pos(self)[0]
+        window_pos = get_link_state(self, "Window", "link_0")
+        reward_near = -np.linalg.norm(eef_pos - window_pos)
+        
+        # Get the joint state of the window. The semantics and the articulation tree show that joint_0 connects link_0 and is the joint that controls the translation of the window.
+        joint_value = get_joint_state(self, "Window", "joint_0") 
+        # The reward is the negative distance between the current joint value and the joint value when the window is halfway open.
+        joint_limit_low, joint_limit_high = get_joint_limit(self, "Window", "joint_0")
+        target_joint_value = (joint_limit_high - joint_limit_low) / 2
+        
+        diff = np.abs(joint_value - target_joint_value)
+        reward_joint =  -diff
+        
+        reward = reward_near + 5 * reward_joint
+        
+        success = diff < 0.1 * (joint_limit_high - joint_limit_low)
+        
+        return reward, success
+

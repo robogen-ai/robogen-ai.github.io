@@ -1,0 +1,77 @@
+========== Generated task name and description ==========
+Close Laptop Lid
+The robotic arm will close the laptop lid
+
+========== Scene configuration ==========
+- use_table: true
+- center: (0.6, 0.5, 0)
+  lang: a common laptop
+  name: Laptop
+  on_table: true
+  path: laptop.urdf
+  size: 0.4
+  type: urdf
+- joint_0: random
+  set_joint_angle_object_name: Laptop
+- spatial_relationships: []
+- center: (0.2, 0.2, 0)
+  lang: a common coffee mug
+  name: coffee_mug
+  on_table: true
+  path: coffee_mug.obj
+  size: 0.1
+  type: mesh
+- center: (0.8, 0.8, 0)
+  lang: a common notebook
+  name: notebook
+  on_table: true
+  path: notebook.obj
+  size: 0.45
+  type: mesh
+- center: (0.8, 0.2, 0)
+  lang: a common pen
+  name: Pen
+  on_table: true
+  path: pen.obj
+  size: 0.01
+  type: urdf
+- center: (1.5, 0.5, 0)
+  lang: a common chair
+  name: Chair
+  on_table: false
+  path: chair.obj
+  size: 1.0
+  type: urdf
+
+========== Task decompositions (substep: learning algorithm type, action space) ==========
+grasp the laptop lid screen: primitive, none
+close the laptop lid: reward, delta_translation
+
+========== Reward and primitives ==========
+- grasp_the_laptop_lid_screen
+    def execute(self):
+        rgbs, final_state = grasp_object_link(self, "Laptop", "link_0")  
+        success = check_grasped(self, "Laptop", "link_0")
+
+        return rgbs, final_state, success
+
+- close_the_laptop_lid
+    def _compute_reward(self):
+        # This reward encourages the end-effector to stay near the lid to grasp it.
+        eef_pos = get_eef_pos(self)[0]
+        lid_pos = get_link_state(self, "Laptop", "link_0")
+        reward_near = -np.linalg.norm(eef_pos - lid_pos)
+        
+        # Get the joint state of the lid. The semantics and the articulation tree show that joint_0 connects link_0 and is the joint that controls the rotation of the lid.
+        joint_angle = get_joint_state(self, "Laptop", "joint_0") 
+        # The reward is the negative distance between the current joint angle and the joint angle when the lid is fully closed (lower limit).
+        joint_limit_low, joint_limit_high = get_joint_limit(self, "Laptop", "joint_0")
+        diff = np.abs(joint_angle - joint_limit_low)
+        reward_joint =  -diff
+        
+        reward = reward_near + 5 * reward_joint
+        
+        success = diff < 0.1 * (joint_limit_high - joint_limit_low)
+        
+        return reward, success
+
