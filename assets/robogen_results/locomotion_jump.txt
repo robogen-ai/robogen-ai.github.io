@@ -1,6 +1,6 @@
 ========== Generated task name and description ==========
 Jump up
-The quadraped should jump up from the ground
+The robot jumps up from the ground
 
 ========== Reward ==========
 def _compute_reward(self):

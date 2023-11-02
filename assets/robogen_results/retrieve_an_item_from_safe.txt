@@ -51,7 +51,7 @@ grasp the item: primitive, none
 move the item out of the safe: reward, delta_translation
 grasp the safe door again: primitive, none
 close the safe door: reward, target_location
-grasp the safe knob again: primitive, none
+grasp the safe knob: primitive, none
 lock the safe by rotating the knob back: reward, delta_translation
 
 ========== Reward and primitives ==========
@@ -143,7 +143,7 @@ lock the safe by rotating the knob back: reward, delta_translation
         
         return reward, success
 
-- grasp_the_safe_knob_again
+- grasp_the_safe_knob
     def execute(self):
         rgbs, final_state = grasp_object_link(self, "Safe", "link_1")  
         success = check_grasped(self, "Safe", "link_1")

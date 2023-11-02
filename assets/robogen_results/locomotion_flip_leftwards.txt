@@ -1,18 +1,18 @@
 ========== Generated task name and description ==========
-Flip backwards
-The quadraped performs a flip towards left
+Flip leftwards
+The robot flips towards left
 
 ========== Reward ==========
 def _compute_reward(self):
-    # we first get some information of the quadruped.
-    # COM_pos and COM_quat are the position and orientation (quaternion) of the center of mass of the quadruped.
+    # we first get some information of the quadruped/humanoid.
+    # COM_pos and COM_quat are the position and orientation (quaternion) of the center of mass of the quadruped/humanoid.
     COM_pos, COM_quat = get_robot_pose(self)
-    # COM_vel, COM_ang are the velocity and angular velocity of the center of mass of the quadruped.
+    # COM_vel, COM_ang are the velocity and angular velocity of the center of mass of the quadruped/humanoid.
     COM_vel, COM_ang = get_robot_velocity(self)
 
-    # face_dir, side_dir, and up_dir are three axes of the rotation of the quadruped.
-    # face direction points from the center of mass towards the face direction of the quadruped.
-    # side direction points from the center of mass towards the side body direction of the quadruped.
+    # face_dir, side_dir, and up_dir are three axes of the rotation of the quadruped/humanoid.
+    # face direction points from the center of mass towards the face direction of the quadruped/humanoid.
+    # side direction points from the center of mass towards the side body direction of the quadruped/humanoid.
     # up direction points from the center of mass towards up, i.e., the negative direction of the gravity. 
     # gravity direction is [0, 0, -1].
     # when initialized, the face of the robot is along the x axis, the side of the robot is along the y axis, and the up of the robot is along the z axis.
