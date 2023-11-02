@@ -6,7 +6,13 @@
 body {
     font-family: "Myriad-Pro", "Open Sans", sans-serif;
 }
-
+.small-image {
+    width: 64px;
+    height: 64px;
+    vertical-align: middle; /* to align the image with the text */
+    margin-top: -12px; /* to give some space between the image and the text */
+    margin-right: 4px; /* to give some space between the image and the text */
+}
 
 .footer .icon-link {
     font-size: 25px;
@@ -50,8 +56,6 @@ body {
     margin-left: -10px;
 }
 
-.publication-title {
-}
 
 .publication-banner {
     max-height: parent;
