@@ -48,9 +48,9 @@ The robot arm is tasked with opening the safe, retrieving an item from inside it
 grasp the safe door: primitive, none
 open the safe door: reward, delta_translation
 grasp the item: primitive, none
-move the item out of the safe: reward, delta_translation
+move the item out of the safe: reward, target_location
 grasp the safe door again: primitive, none
-close the safe door: reward, target_location
+close the safe door: reward, delta_translation
 grasp the safe knob: primitive, none
 lock the safe by rotating the knob back: reward, delta_translation
 
